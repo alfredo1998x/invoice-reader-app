@@ -1,6 +1,5 @@
 import streamlit as st
 import pdfplumber
-from pdf2image import convert_from_bytes
 from PIL import Image
 import pytesseract
 import re
@@ -17,11 +16,9 @@ def extract_text_from_pdf(uploaded_file):
         if text.strip():
             return text, "text"
         else:
-            images = convert_from_bytes(uploaded_file.read())
-            return pytesseract.image_to_string(images[0]), "image"
+            return "", "image"  # fallback disabled
     except:
-        images = convert_from_bytes(uploaded_file.read())
-        return pytesseract.image_to_string(images[0]), "image"
+        return "", "error"
 
 def extract_text_from_image(uploaded_file):
     img = Image.open(uploaded_file)
@@ -48,6 +45,9 @@ if uploaded_file:
     file_type = uploaded_file.name.lower()
     if file_type.endswith(".pdf"):
         text, method = extract_text_from_pdf(uploaded_file)
+        if method == "image":
+            st.error("❌ This PDF is scanned and cannot be read without OCR. Please upload an image instead.")
+            st.stop()
     else:
         text, method = extract_text_from_image(uploaded_file)
 
