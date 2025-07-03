@@ -1,29 +1,23 @@
 import streamlit as st
-import pdfplumber
+import fitz  # PyMuPDF
 from PIL import Image
 import pytesseract
+import io
 import re
 import pandas as pd
 
-st.set_page_config("Invoice Reader", layout="centered")
+st.set_page_config("Invoice OCR Extractor", layout="centered")
 
-# ────────────────────── Helper Functions ──────────────────────
+# ────────────── Convert PDF page to image (via PyMuPDF, works on Streamlit Cloud)
+def convert_pdf_to_image(uploaded_file):
+    pdf_bytes = uploaded_file.read()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = doc.load_page(0)  # first page
+    pix = page.get_pixmap(dpi=300)
+    img_bytes = pix.tobytes("png")
+    return Image.open(io.BytesIO(img_bytes))
 
-def extract_text_from_pdf(uploaded_file):
-    try:
-        with pdfplumber.open(uploaded_file) as pdf:
-            text = "\n".join([page.extract_text() or "" for page in pdf.pages])
-        if text.strip():
-            return text, "text"
-        else:
-            return "", "image"  # fallback disabled
-    except:
-        return "", "error"
-
-def extract_text_from_image(uploaded_file):
-    img = Image.open(uploaded_file)
-    return pytesseract.image_to_string(img), "image"
-
+# ────────────── Extract invoice data from text
 def extract_invoice_data(text):
     invoice_number = re.search(r"INVOICE\s*#?:?\s*(\d+)", text, re.IGNORECASE)
     invoice_date   = re.search(r"DATE\s*[:\s]*([0-9]{2}/[0-9]{2}/[0-9]{4})", text, re.IGNORECASE)
@@ -35,23 +29,24 @@ def extract_invoice_data(text):
         "Total Amount": total_amount.group(1) if total_amount else "Not Found"
     }
 
-# ────────────────────── Streamlit UI ──────────────────────
-
+# ────────────── Streamlit App Layout
 st.title("🧾 Invoice OCR Extractor")
 
-uploaded_file = st.file_uploader("Upload an invoice PDF or image", type=["pdf", "png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload scanned invoice PDF or image", type=["pdf", "png", "jpg", "jpeg"])
 
 if uploaded_file:
-    file_type = uploaded_file.name.lower()
-    if file_type.endswith(".pdf"):
-        text, method = extract_text_from_pdf(uploaded_file)
-        if method == "image":
-            st.error("❌ This PDF is scanned and cannot be read without OCR. Please upload an image instead.")
-            st.stop()
+    ext = uploaded_file.name.lower()
+    
+    if ext.endswith(".pdf"):
+        image = convert_pdf_to_image(uploaded_file)
+        text = pytesseract.image_to_string(image)
+        method = "OCR (from scanned PDF)"
     else:
-        text, method = extract_text_from_image(uploaded_file)
+        image = Image.open(uploaded_file)
+        text = pytesseract.image_to_string(image)
+        method = "OCR (from image)"
 
-    st.success(f"✅ Extracted using: {'OCR' if method == 'image' else 'Text layer'}")
+    st.success(f"✅ Extracted using: {method}")
 
     invoice_data = extract_invoice_data(text)
 
