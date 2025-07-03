@@ -1,23 +1,37 @@
 import streamlit as st
 import fitz  # PyMuPDF
+import requests
 from PIL import Image
-import pytesseract
 import io
 import re
 import pandas as pd
 
 st.set_page_config("Invoice OCR Extractor", layout="centered")
 
-# ────────────── Convert PDF page to image (via PyMuPDF, works on Streamlit Cloud)
+OCR_API_KEY = "helloworld"  # Free key from ocr.space
+
+# ───────────── Convert scanned PDF to image using PyMuPDF
 def convert_pdf_to_image(uploaded_file):
     pdf_bytes = uploaded_file.read()
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    page = doc.load_page(0)  # first page
+    page = doc.load_page(0)
     pix = page.get_pixmap(dpi=300)
     img_bytes = pix.tobytes("png")
-    return Image.open(io.BytesIO(img_bytes))
+    return img_bytes
 
-# ────────────── Extract invoice data from text
+# ───────────── Use OCR.space API for cloud-based OCR
+def run_ocr_api(image_bytes):
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+        files={"file": ("image.png", image_bytes)},
+        data={"apikey": OCR_API_KEY, "language": "eng"},
+    )
+    result = response.json()
+    if result["IsErroredOnProcessing"]:
+        return "Error processing OCR."
+    return result["ParsedResults"][0]["ParsedText"]
+
+# ───────────── Extract fields using regex
 def extract_invoice_data(text):
     invoice_number = re.search(r"INVOICE\s*#?:?\s*(\d+)", text, re.IGNORECASE)
     invoice_date   = re.search(r"DATE\s*[:\s]*([0-9]{2}/[0-9]{2}/[0-9]{4})", text, re.IGNORECASE)
@@ -29,24 +43,23 @@ def extract_invoice_data(text):
         "Total Amount": total_amount.group(1) if total_amount else "Not Found"
     }
 
-# ────────────── Streamlit App Layout
-st.title("🧾 Invoice OCR Extractor")
+# ───────────── UI
+st.title("🧾 Invoice OCR Extractor (Cloud-Based)")
 
-uploaded_file = st.file_uploader("Upload scanned invoice PDF or image", type=["pdf", "png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload a scanned invoice PDF or image", type=["pdf", "png", "jpg", "jpeg"])
 
 if uploaded_file:
-    ext = uploaded_file.name.lower()
-    
-    if ext.endswith(".pdf"):
-        image = convert_pdf_to_image(uploaded_file)
-        text = pytesseract.image_to_string(image)
-        method = "OCR (from scanned PDF)"
-    else:
-        image = Image.open(uploaded_file)
-        text = pytesseract.image_to_string(image)
-        method = "OCR (from image)"
+    file_ext = uploaded_file.name.lower()
 
-    st.success(f"✅ Extracted using: {method}")
+    if file_ext.endswith(".pdf"):
+        img_bytes = convert_pdf_to_image(uploaded_file)
+    else:
+        img_bytes = uploaded_file.read()
+
+    with st.spinner("🔍 Running OCR..."):
+        text = run_ocr_api(img_bytes)
+
+    st.success("✅ OCR complete!")
 
     invoice_data = extract_invoice_data(text)
 
@@ -54,5 +67,5 @@ if uploaded_file:
     df = pd.DataFrame(invoice_data.items(), columns=["Field", "Value"])
     st.table(df)
 
-    if st.checkbox("🧾 Show raw extracted text"):
-        st.text_area("Raw OCR Text", value=text, height=300)
+    if st.checkbox("🧾 Show raw OCR text"):
+        st.text_area("Raw OCR Text", text, height=300)
