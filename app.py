@@ -17,7 +17,6 @@ def extract_text_from_pdf(uploaded_file):
         if text.strip():
             return text, "text"
         else:
-            # Fallback to OCR
             images = convert_from_bytes(uploaded_file.read())
             return pytesseract.image_to_string(images[0]), "image"
     except:
@@ -29,18 +28,17 @@ def extract_text_from_image(uploaded_file):
     return pytesseract.image_to_string(img), "image"
 
 def extract_invoice_data(text):
-    data = {}
-    data["Invoice Number"] = re.search(r"Invoice\s*#?:?\s*(\d+)", text, re.IGNORECASE)
-    data["Invoice Date"]   = re.search(r"Date\s*:? ?(\d{1,2}/\d{1,2}/\d{4})", text)
-    data["Total Amount"]   = re.search(r"Total\s*\$?([\d,]+\.\d{2})", text)
+    invoice_number = re.search(r"INVOICE\s*#?:?\s*(\d+)", text, re.IGNORECASE)
+    invoice_date   = re.search(r"DATE\s*[:\s]*([0-9]{2}/[0-9]{2}/[0-9]{4})", text, re.IGNORECASE)
+    total_amount   = re.search(r"TOTAL\s*[:\s]*\$?([\d,]+\.\d{2})", text, re.IGNORECASE)
 
     return {
-        "Invoice Number": data["Invoice Number"].group(1) if data["Invoice Number"] else "Not Found",
-        "Invoice Date": data["Invoice Date"].group(1) if data["Invoice Date"] else "Not Found",
-        "Total Amount": data["Total Amount"].group(1) if data["Total Amount"] else "Not Found"
+        "Invoice Number": invoice_number.group(1) if invoice_number else "Not Found",
+        "Invoice Date": invoice_date.group(1) if invoice_date else "Not Found",
+        "Total Amount": total_amount.group(1) if total_amount else "Not Found"
     }
 
-# ────────────────────── UI ──────────────────────
+# ────────────────────── Streamlit UI ──────────────────────
 
 st.title("🧾 Invoice OCR Extractor")
 
@@ -54,6 +52,7 @@ if uploaded_file:
         text, method = extract_text_from_image(uploaded_file)
 
     st.success(f"✅ Extracted using: {'OCR' if method == 'image' else 'Text layer'}")
+
     invoice_data = extract_invoice_data(text)
 
     st.subheader("📋 Extracted Invoice Data")
